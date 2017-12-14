@@ -1,0 +1,359 @@
+n_rodadas <- 8
+n_jogadores <- 4
+
+# Matriz de payoffs. Como a matriz é simétrica, os payoffs para Alba e Batia são
+# os mesmos
+payoffs <- matrix(c(5, 15, 15, 3, 8, 18, 2, 2, 11),
+                  byrow = TRUE,
+                  nrow = 3,
+                  ncol = 3,
+                  dimnames = list(c("Vc vende por $10", "Vc vende por $20", "Vc vende por $30"),
+                                  c("Op. vende por $10", "Op. vende por $20", "Op. vende por $30")))
+
+ganhos <- function(Alba, Batia){
+  g = 0*Alba # Multiplicar por Alba força g a ser uma matriz
+  g[(Alba == 10) & (Batia == 10)] = payoffs[1, 1]
+  g[(Alba == 10) & (Batia == 20)] = payoffs[1, 2]
+  g[(Alba == 10) & (Batia == 30)] = payoffs[1, 3]
+  g[(Alba == 20) & (Batia == 10)] = payoffs[2, 1]
+  g[(Alba == 20) & (Batia == 20)] = payoffs[2, 2]
+  g[(Alba == 20) & (Batia == 30)] = payoffs[2, 3]
+  g[(Alba == 30) & (Batia == 10)] = payoffs[3, 1]
+  g[(Alba == 30) & (Batia == 20)] = payoffs[3, 2]
+  g[(Alba == 30) & (Batia == 30)] = payoffs[3, 3]
+  g
+}
+
+
+ganhos(c(10, 30, 30, 30, 30), c(30, 10, 30, 20, 10))
+
+# Robôs
+sempre_10  = function(h) 10
+sempre_20 = function(h) 20
+sempre_30 = function(h) 30
+
+aleatorio = function(h) sample(c(10, 20, 30), 1)
+
+jogadores = c("sempre_10", "sempre_20", "sempre_30", "aleatorio")
+
+# Matriz de histórico de jogadas para cada jogador
+hist <- matrix(NA, ncol = n_jogadores, nrow = n_rodadas)
+
+# Matriz de ações
+acao_recebida = matrix(NA, ncol = n_jogadores, nrow = n_rodadas)
+acao_dada = matrix(NA, ncol = n_jogadores, nrow = n_rodadas)
+
+# Matriz de pontuação
+pontos = matrix(NA, ncol = n_jogadores, nrow = n_rodadas)
+
+# Começando a simulação
+n = 1
+for (n in 1:n_rodadas) {
+  
+  # This while loop ensures that every agent is matched with another agent
+  while (sum(is.na(hist[n,]))>0) {
+    # In each round each agents gets randomly paired up with another agent.
+    unpaired = 1:n_jogadores
+    
+    # Loop through all of the agents
+    while (length(unpaired)>1) {
+      # Select the first element of the unpaired list as a starting place.
+      i = unpaired[1]
+      # Remove agent i from the unpaired list
+      unpaired = unpaired[unpaired!=i] 
+      # This randomly selects a single agent to match i to.
+      # I threw the repeate function in there because when unpaired gets down to
+      # only a single number in length then sample starts functioning differently.
+      # Thus the rep keeps it from ever being length 1.
+      i.match = sample(rep(unpaired,2), 1)
+      # Remove i.match from unpaired list
+      unpaired = unpaired[unpaired!=i.match] 
+      # Assign to agent i and i.match their match values
+      hist[n,i] = i.match
+      hist[n,i.match] = i
+    } # This loop matches agents
+  }
+  # There should be no NAs in this list if the previous matching loops worked properly.
+  sort(hist[n,])
+  
+  for (i in 1:n_jogadores) {
+    # Define each agent's history from previous encounters with the current counterpart
+    a.faced = hist[n,i]
+    a.numbers = hist[,i]
+    a.actions = acao_recebida[,i]
+    
+    # Select h as the history of actions with the current rival
+    # excluding this round.
+    h = a.actions[(a.numbers==a.faced)&(n>1:n_rodadas)]
+    
+    
+    
+    # Feed history into response function
+    response = get(jogadores[i])(h)
+    print(h)
+    print(response)
+    
+    # Save the response to the actions
+    acao_dada[n,i] = response
+    acao_recebida[n,a.faced] = response
+    
+   # print(i)
+  }
+  
+}
+
+# Pontos por rodada
+pontos_rodada = ganhos(acao_dada, acao_recebida)
+
+# Final results are:
+cbind(jogadores, apply(pontos_rodada, 2, sum))
+
+
+# A better graph might be one that shows how different agents performed over time.
+score.cum = apply(pontos_rodada, 2, cumsum)
+agent.color = rainbow(length(jogadores))
+
+plot(x=c(1,n_rodadas+2),y=c(min(score.cum),max(score.cum)),type="n", 
+     main="AI performance over time", xlab="round", ylab="score")
+for (i in 1:n_jogadores) lines(1:n_rodadas, score.cum[,i], col=agent.color[jogadores[i]==jogadores], lwd=2)
+
+# Reorder agents by lowest to highest cumscore at the end
+agents.ranked = jogadores[order(score.cum[n_rodadas,])]
+
+yrange = max(score.cum)-min(score.cum)
+yinc = (yrange/n_jogadores)
+for (i in 1:n_jogadores) text(n_rodadas+1.75, yinc*i+min(score.cum)-2.5, paste(n_jogadores-i+1,agents.ranked[i]), col=agent.color[jogadores[i]==jogadores])
+
+
+  # -----------------------------------------------------------
+
+# Tit for Tat competitive simulation
+
+# I have been reading the Moral Animal by Robert Wright and it has gotten me interested in putting together a simulation which is modelled after the classic Robert Axelrod's tournament style influential simulations.  So here it is!  Hope you enjoy it.
+
+# You can also find a link to the code in full here.
+
+# I would like to simulate multi-agent a micro-economy in which agents perform the prisoner's dimemma repeatedly.
+
+# Games like this have been important as evidence for an evolutionary psychological explanation of social cooperation.
+
+# Returns for:
+  # cooperate
+  coop.coop = 1
+
+  # you cheat but opponent cooperates
+  cheat.coop = 2
+
+  # You cooperate but opponent cheats
+  coop.cheat = -2
+  
+  # Both cheat
+  cheat.cheat = -1
+
+# This function turns the parameters into returns.
+returns = function(you,opponent) {
+  ret = 0*you
+  ret[(you==1)&(opponent==1)] = coop.coop
+  ret[(you==0)&(opponent==1)] = cheat.coop
+  ret[(you==1)&(opponent==0)] = coop.cheat
+  ret[(you==0)&(opponent==0)] = cheat.cheat
+  ret
+}
+
+# For example, if you cheat but your opponent cooperates for the first two rounds
+returns(c(0,0,0),c(1,1,0))
+  
+# Thus the game is defined as a zero sum game when players interact randomly with each other.  But a greater than zero sum when players are systematically cooperating and less than zero sum when players are systematically cheating.
+  
+# Number of rounds:
+  n.rounds = 200
+  
+# Number of agents. This number must be even to ensure every agent is matched.
+  n.agents = 20
+  
+# Basic framework.  
+# Each round agents meet other agents.  
+# Each agent has access to knowledge of the other agents previous behavior (either cheat or cooperate)
+
+# Let's define the types of agents.
+# Agents get fed input h which is the list of prior history with other agent.
+# The argument they return is their action.
+
+# The stupid agents are.
+always.coop  = function(h) 1
+always.cheat = function(h) 0
+
+# Random Tod
+Random.Tod = function(h) 1==rbinom(1,1,.5)
+
+# tit4tat says that if the most recent action the opponent took was cheat then cheat otherwise cooperate.
+tit4tat = function(h) {
+  # When the length of h = 0 then that means there is no history.
+  if (length(h)==0) T
+  else rev(h)[1]==1
+}
+
+# initially agressive tit4tat
+ag.tit4tat = function(h) {
+  if (length(h)==0) F
+  else rev(h)[1]==1
+}
+
+# opportunist tit4tat
+op.tit4tat = function(h) {
+  if (length(h)==0) T
+  else ((n<n.rounds-n.agents)&(rev(h)[1]==1))
+  # This is a somewhat tricky action behavior.
+  # It states that play tit for tat up to the point near when the game ends.
+  # Then start cheating because the game is coming to an end.
+}
+
+
+# fairbot is defined such that fairbot will only cheat if on average the previous actions the opponent cheated more
+fairbot = function(h) {
+  if (length(h)==0) T
+  else mean(h,na.rm=T)>=.5
+}
+
+# Initially agressive fair bot
+ag.fairbot = function(h) {
+  if (length(h)==0) F
+  else mean(h,na.rm=T)>=.5
+}
+
+# Coward dictator. If opponent on average cooperates then cheat, if opponent on average cheats then cooperate.
+dictator = function(h) {
+  if (length(h)==0) T
+  else mean(h,na.rm=T)<=.5
+}
+
+# Aggressive dictator
+ag.dictator = function(h) {
+  if (length(h)==0) F
+  else mean(h,na.rm=T)<=.5
+}
+
+# Frenemy
+frenemy = function(h) {
+  if (length(h)==0) T
+  else mean(rev(h)[1:2],na.rm=T)==1
+  # Frienemy is friendly until you have two interactions in which you cooperate with it then it cheats before turning friendly again if you cooperate twice then it turns ugly again.
+}
+
+agent.list = c("always.coop", "always.cheat", "tit4tat" , "ag.tit4tat",
+               "fairbot"    , "ag.fairbot"  , "dictator", "ag.dictator",
+               "op.tit4tat" , "Random.Tod"  , "frenemy")
+               
+# First I will draw a random draw of agents.
+agents = sort(sample(agent.list, n.agents, replace=T))
+
+# Now let's generate the agent history matrices for each player.
+agent.number = matrix(NA, ncol=n.agents, nrow=n.rounds)
+
+# The agent actions matrices are 
+agent.actions.recieved = matrix(NA, ncol=n.agents, nrow=n.rounds)
+agent.actions.given = matrix(NA, ncol=n.agents, nrow=n.rounds)
+
+# Agent point history (the total is the sum of the columns)
+agent.points = matrix(NA, ncol=n.agents, nrow=n.rounds)
+
+# Let's start the simulation:
+n = 1
+for (n in 1:n.rounds) {
+
+  # This while loop ensures that every agent is matched with another agent
+  while (sum(is.na(agent.number[n,]))>0) {
+  # In each round each agents gets randomly paired up with another agent.
+  unpaired = 1:n.agents
+  
+    # Loop through all of the agents
+    while (length(unpaired)>1) {
+      # Select the first element of the unpaired list as a starting place.
+      i = unpaired[1]
+      # Remove agent i from the unpaired list
+      unpaired = unpaired[unpaired!=i] 
+      # This randomly selects a single agent to match i to.
+        # I threw the repeate function in there because when unpaired gets down to
+        # only a single number in length then sample starts functioning differently.
+        # Thus the rep keeps it from ever being length 1.
+      i.match = sample(rep(unpaired,2), 1)
+      # Remove i.match from unpaired list
+      unpaired = unpaired[unpaired!=i.match] 
+      # Assign to agent i and i.match their match values
+      agent.number[n,i] = i.match
+      agent.number[n,i.match] = i
+    } # This loop matches agents
+  }
+  # There should be no NAs in this list if the previous matching loops worked properly.
+  sort(agent.number[n,])
+    
+  for (i in 1:n.agents) {
+    # Define each agent's history from previous encounters with the current counterpart
+    a.faced = agent.number[n,i]
+    a.numbers = agent.number[,i]
+    a.actions = agent.actions.recieved[,i]
+    
+    # Select h as the history of actions with the current rival
+    # excluding this round.
+    h = a.actions[(a.numbers==a.faced)&(n>1:n.rounds)]
+    
+    
+    
+    # Feed history into response function
+    response = get(agents[i])(h)
+    print(h)
+    print(response)
+
+    # Save the response to the actions
+    agent.actions.given[n,i] = response
+    agent.actions.recieved[n,a.faced] = response
+    
+    # print(i)
+  }
+    
+}
+
+# Calculate scores by round:
+scores.round = returns(agent.actions.given, agent.actions.recieved)
+
+# Final results are:
+cbind(agents,apply(scores.round, 2, sum))
+
+# Let's map out the social networks inherent in this exchange:
+require(igraph)
+
+# Let's first create out edge list
+# Specify a number less than the total number of rounds to map since the total number of rounds is probably a little too large.
+map.rounds = 7
+
+x = cbind(1:n.agents, agent.number[1,])
+for (n in 2:map.rounds) {
+  x = rbind(x, cbind(1:n.agents, agent.number[n,]))
+}
+
+# We will use the statnet package to plot the social network
+require(statnet)
+g = network(x)
+
+plot(g, label=agents, main="A social network graph does not help")
+
+# A better graph might be one that shows how different agents performed over time.
+score.cum = apply(scores.round, 2, cumsum)
+
+agent.color = rainbow(length(agent.list))
+
+plot(x=c(1,n.rounds+25),y=c(min(score.cum),max(score.cum)),type="n", 
+     main="AI performance over time", xlab="round", ylab="score")
+for (i in 1:n.agents) lines(1:n.rounds, score.cum[,i], col=agent.color[agents[i]==agent.list], lwd=2)
+
+# Reorder agents by lowest to highest cumscore at the end
+agents.ranked = agents[order(score.cum[n.rounds,])]
+
+yrange = max(score.cum)-min(score.cum)
+yinc = (yrange/n.agents)
+for (i in 1:n.agents) text(n.rounds+17.5, yinc*i+min(score.cum)-2.5, paste(n.agents-i+1,agents.ranked[i]), col=agent.color[agents.ranked[i]==agent.list])
+
+# We can see that up to between round 50-80 all of the bots perform equally since they do not have any history on each other.
+
+# Notice that the oportunistic tit4tat seems to perform the best frequently.  This is kind of unfair since this bot is using meta-game data.  Ie. it knows the game ends so near the end of the game it starts cheating like crazy because there is probably not time for future reprisals.
+
